@@ -1,11 +1,9 @@
 import fs from 'fs';
 import GeoTIFF, { writeArrayBuffer, fromFile, fromArrayBuffer } from 'geotiff';
-
-
-
+import gdal from 'gdal';
 const main = async () => {
 
-  const tif = await fromFile('birch.tif');
+  const tif = await fromFile('pine.tif');
   //console.log(tif);
   const image = await tif.getImage();
   console.log(image);
@@ -14,10 +12,6 @@ const main = async () => {
 
   //console.log(image);
   const values = raster;
-  for(let i = 0; i < values.length; i++){
-    values[i] = values[i]*100;
-  }
-  console.log(values);
   const imageHeight = await layer.height;
   const imageWidth = await layer.width;
   const geoKeys = await tif.geoKeys;
@@ -26,25 +20,12 @@ const main = async () => {
   const stripByteCounts = await image.fileDirectory.StripByteCounts;
   let XResolution = await fileDir.XResolution;
   let YResolution = await fileDir.YResolution;
-  const AxeResolution = async (XResolution, YResolution) => {
-    const array = [];
-    if(!XResolution){
-      array.push([1, 1]);
-    }
-    else{
-      array.push(XResolution);
-    }
-    if(!YResolution){
-      array.push([1, 1]);
-    }
-    else{
-      array.push(YResolution);
-    }
-    return array;
+  if(!XResolution){
+    XResolution = [1, 1];
   }
-  [XResolution, YResolution] = await AxeResolution(XResolution, YResolution);
-
-  
+  if(!YResolution){
+    YResolution = [1, 1];
+  }
   const ModelPixelScale = await fileDir.ModelPixelScale;
   const ModelTiepoint = await fileDir.ModelTiepoint; 
   const GeoKeyDirectory = await image.fileDirectory.GeoKeyDirectory;
@@ -79,36 +60,37 @@ const main = async () => {
     ModelTiepoint: ModelTiepoint,
     GeoKeyDirectory: GeoKeyDirectory,
     GeoAsciiParams: GeoAsciiParams,
-    PhotometricInterpretation: PhotometricInterpretation,
+    PhotometricInterpretation: 3,
     Compression: Compression,
     SamplesPerPixel: SamplesPerPixel,
     ProjectedCSTypeGeoKey: ProjectedCSTypeGeoKey,
     DateTime: '',
-    Orientation: Orientation
+    Orientation: Orientation,
 
   }
 
-  // half functioning, not working with resolutionUnit, rowsPerStrip, bitsPerSample, ColorMap and many more. so tif can only be read in qgis. not in ordinary photo program
-  const arrayBuffer = await writeArrayBuffer(raster, metadata);
-  const tif2 = await fromArrayBuffer(arrayBuffer);
-  console.log(tif2);
-  const image2 = await tif2.getImage();
-  console.log(image2);
-  
-  const buffer = Buffer.from(arrayBuffer);
+  let dataset = gdal.open('nmd.tif');
+  console.log(dataset);
 
-  let writeStream = fs.createWriteStream('birch_copyX5.tif');
+  const numBands = 1;
+  const driver = gdal.Driver;
+  const dst_ds = driver.create('nmd_copy.tif', imageWidth, imageHeight, numBands, gdal.GDT_Byte);
+  console.log(dst_ds); 
 
-  // write some data with encoding
-  writeStream.write(buffer, 'utf8');
 
-  // the finish event is emitted when all data has been flushed from the stream
-  writeStream.on('finish', () => {
-    console.log('wrote all data to file');
-  });
 
-  // close the stream
-  writeStream.end();
+  // let writeStream = fs.createWriteStream('pine_copy3.tif');
+
+  // // write some data with encoding
+  // writeStream.write(buffer, 'utf8');
+
+  // // the finish event is emitted when all data has been flushed from the stream
+  // writeStream.on('finish', () => {
+  //   console.log('wrote all data to file');
+  // });
+
+  // // close the stream
+  // writeStream.end();
 
 }
 const resulthandler = err => {

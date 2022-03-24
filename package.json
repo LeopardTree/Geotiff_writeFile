@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "gdal": "^0.11.1",
     "geotiff": "^2.0.4"
   },
   "type": "module"
