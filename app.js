@@ -1,49 +1,59 @@
 import fs from 'fs';
-import GeoTIFF, { writeArrayBuffer, fromFile } from 'geotiff';
-import { fileURLToPath } from 'url';
+import GeoTIFF, { writeArrayBuffer, fromFile, fromArrayBuffer } from 'geotiff';
 
-const toBuffer = async (ab) => {
-  const buf = Buffer.alloc(ab.byteLength);
-  const view = new Uint8Array(ab);
-  for (let i = 0; i < buf.length; ++i) {
-      buf[i] = view[i];
-  }
-  return buf;
-}
+
 
 const main = async () => {
-  // const values = [0, 1, 2, 3, 4, 5, 6, 7, 8];
-  // const metadata = {
-  //   height: 3,
-  //   width: 3
-  // };
-  // const arrayBuffer = await writeArrayBuffer(values, metadata);
 
-  // console.dir(arrayBuffer);
-  const tif = await fromFile('nmd.tif');
+  const tif = await fromFile('birch.tif');
   //console.log(tif);
   const image = await tif.getImage();
+  console.log(image);
   const layer = await image.readRasters();
   const raster = layer[0];
 
-
   //console.log(image);
   const values = raster;
+  for(let i = 0; i < values.length; i++){
+    values[i] = values[i]*100;
+  }
+  console.log(values);
   const imageHeight = await layer.height;
   const imageWidth = await layer.width;
   const geoKeys = await tif.geoKeys;
   let fileDir = await image.getFileDirectory();
-  let stripOffsets = await image.stripOffsets;
-  let stripByteCounts = await fileDir.stripByteCounts;
-  const XResolution = await fileDir.XResolution;
-  const YResolution = await fileDir.YResolution;
+  const stripOffsets = await image.fileDirectory.StripOffsets;
+  const stripByteCounts = await image.fileDirectory.StripByteCounts;
+  let XResolution = await fileDir.XResolution;
+  let YResolution = await fileDir.YResolution;
+  const AxeResolution = async (XResolution, YResolution) => {
+    const array = [];
+    if(!XResolution){
+      array.push([1, 1]);
+    }
+    else{
+      array.push(XResolution);
+    }
+    if(!YResolution){
+      array.push([1, 1]);
+    }
+    else{
+      array.push(YResolution);
+    }
+    return array;
+  }
+  [XResolution, YResolution] = await AxeResolution(XResolution, YResolution);
+
+  
   const ModelPixelScale = await fileDir.ModelPixelScale;
   const ModelTiepoint = await fileDir.ModelTiepoint; 
-  const GeoKeyDirectory = await fileDir.GeoKeyDirectory;
+  const GeoKeyDirectory = await image.fileDirectory.GeoKeyDirectory;
   const BitsPerSample = await fileDir.BitsPerSample;
   const GeoAsciiParams = await fileDir.GeoAsciiParams;
+
+  //If SamplesPerPixel is 1, PlanarConfiguration is irrelevant, and need not be included. https://www.itu.int/itudoc/itu-t/com16/tiff-fx/docs/tiff6.pdf page 38
   const PlanarConfiguration = await fileDir.PlanarConfiguration;
-  const ColorMap = await fileDir.ColorMap;
+  const ColorMap = await image.fileDirectory.ColorMap;
   const PhotometricInterpretation = await fileDir.PhotometricInterpretation;
   const Compression = await fileDir.Compression;
   const SamplesPerPixel = await fileDir.SamplesPerPixel;
@@ -52,86 +62,54 @@ const main = async () => {
   const GDAL_METADATA = await fileDir.GDAL_METADATA;
   const Software = await fileDir.software;
   const ProjectedCSTypeGeoKey = await image.geoKeys.ProjectedCSTypeGeoKey;
-
-  // console.log(ModelTransformation);
-
-  // console.log(tif);
-  // console.log(image);
-  // console.dir('geoKeyDirectory: ' + GeoKeyDirectory);
-  // console.log(GeoAsciiParams);
-
-  const sweref_tm = 3006;
-
-  // const metadata = {
-  //   height: imageHeight,
-  //   width: imageWidth,
-  //   StripOffsets: stripOffsets,
-  //   StripByteCounts: stripByteCounts,
-  //   XResolution: XResolution,
-  //   YResolution: YResolution,
-  //   ModelPixelScale: ModelPixelScale,
-  //   ModelTiepoint: ModelTiepoint,
-  //   GeoKeyDirectory: GeoKeyDirectory,
-  //   BitsPerSample: BitsPerSample,
-  //   GeoAsciiParams: GeoAsciiParams,
-  //   PlanarConfiguration: PlanarConfiguration,
-  //   PhotometricInterpretation: 1,
-  //   Compression: Compression,
-  //   SamplesPerPixel: SamplesPerPixel,
-  //   Orientation: Orientation,
-  //   ProjectedCSTypeGeoKey: ProjectedCSTypeGeoKey,
-  //   DateTime: '',
-  //   //ProjectedCSTypeGeoKey: 3006,
-  //   //ProjLinearUnitsGeoKey: 9001
-
-  // }
-
-  // const metadata = {};
-  // await Object.assign(metadata, image.fileDirectory);
-
-  // if(metadata.ColorMap){
-  //   delete metadata.ColorMap;
-  // }
-  // console.log(metadata);
+  const RowsPerStrip = await fileDir.RowsPerStrip;
+  const ResolutionUnit = await fileDir.ResolutionUnit;
+  const SubfileType = 1;
+  const SampleFormat = await fileDir.SampleFormat;
 
 
-  const metadata ={
-    ImageWidth: 500,
-    ImageLength: 500,
-    BitsPerSample: BitsPerSample,
-    Compression: 1,
-    PhotometricInterpretation: 3,
-    StripOffsets: await image.fileDirectory.StripOffsets,
-    SamplesPerPixel: 1,
-    RowsPerStrip: 16,
-    StripByteCounts: await image.fileDirectory.StripByteCounts,
-    PlanarConfiguration: 1,
-    ResolutionUnit: 2,
-    Software: await image.fileDirectory.Software,
-    SampleFormat: [ 1 ],
-    ModelPixelScale: [ 10, 10, 0 ],
-    ModelTiepoint: [ 0, 0, 0, 550000, 6455000, 0 ],
-    GeoKeyDirectory: await image.fileDirectory.GeoKeyDirectory,
+  const metadata = {
+    height: imageHeight,
+    width: imageWidth,
+    StripOffsets: stripOffsets,
+    StripByteCounts: stripByteCounts,
+    XResolution: XResolution,
+    YResolution: YResolution,
+    ModelPixelScale: ModelPixelScale,
+    ModelTiepoint: ModelTiepoint,
+    GeoKeyDirectory: GeoKeyDirectory,
     GeoAsciiParams: GeoAsciiParams,
-    ProjectedCSTypeGeoKey: 3006
+    PhotometricInterpretation: PhotometricInterpretation,
+    Compression: Compression,
+    SamplesPerPixel: SamplesPerPixel,
+    ProjectedCSTypeGeoKey: ProjectedCSTypeGeoKey,
+    DateTime: '',
+    Orientation: Orientation
 
   }
 
-  console.log(fileDir);
-  //const buffer = new Uint8Array(arrayBuffer);
-
-  //
-
+  // half functioning, not working with resolutionUnit, rowsPerStrip, bitsPerSample, ColorMap and many more. so tif can only be read in qgis. not in ordinary photo program
   const arrayBuffer = await writeArrayBuffer(raster, metadata);
-  console.log(arrayBuffer);
-  const buf = await Buffer.from(arrayBuffer);
-  // await fs.writeFile('nmd_copy4.tif', buf, (err) => {
-  //   if(err){
-  //     console.log(err);
-  //   }
-    
-  // })
-  fs.createWriteStream('test4.tif').write(buf);
+  const tif2 = await fromArrayBuffer(arrayBuffer);
+  console.log(tif2);
+  const image2 = await tif2.getImage();
+  console.log(image2);
+  
+  const buffer = Buffer.from(arrayBuffer);
+
+  let writeStream = fs.createWriteStream('birch_copyX5.tif');
+
+  // write some data with encoding
+  writeStream.write(buffer, 'utf8');
+
+  // the finish event is emitted when all data has been flushed from the stream
+  writeStream.on('finish', () => {
+    console.log('wrote all data to file');
+  });
+
+  // close the stream
+  writeStream.end();
+
 }
 const resulthandler = err => {
   //console.timeEnd('Duration to execute everything');
@@ -141,3 +119,5 @@ const resulthandler = err => {
 main().then(resulthandler).catch(resulthandler);
 
 
+
+// info about tif from https://www.itu.int/itudoc/itu-t/com16/tiff-fx/docs/tiff6.pdf
