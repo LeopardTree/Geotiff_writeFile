@@ -3,14 +3,12 @@ import GeoTIFF, { writeArrayBuffer, fromFile, fromArrayBuffer } from 'geotiff';
 import gdal from 'gdal';
 const main = async () => {
 
-  const tif = await fromFile('pine.tif');
+  const tif = await fromFile('nmd.tif');
   //console.log(tif);
   const image = await tif.getImage();
-  console.log(image);
   const layer = await image.readRasters();
   const raster = layer[0];
 
-  //console.log(image);
   const values = raster;
   const imageHeight = await layer.height;
   const imageWidth = await layer.width;
@@ -68,17 +66,52 @@ const main = async () => {
     Orientation: Orientation,
 
   }
+  //https://stackoverflow.com/questions/58280379/how-to-find-the-type-of-a-typedarray
+  function checkTypedArrayType(someTypedArray) {
+    return someTypedArray && 
+      someTypedArray.constructor && 
+      someTypedArray.constructor.name || 
+      null;
+  }
+  const arrtype = checkTypedArrayType(raster);
 
   let dataset = gdal.open('nmd.tif');
+  
   console.log(dataset);
+  // const dst_ds = driver.create('nmd_copy.tif', imageWidth, imageHeight, numBands, gdal.GDT_Byte);
+  // console.log(dst_ds); 
+  // create geotiff driver
+  const driver = gdal.drivers.get('GTiff');
+  //create destination dataset
+  let dst_ds = driver.create('nmd_copy_gdal.tif', 500, 500, 1, arrtype);
+  //console.log(dst_ds);
 
-  const numBands = 1;
-  const driver = gdal.Driver;
-  const dst_ds = driver.create('nmd_copy.tif', imageWidth, imageHeight, numBands, gdal.GDT_Byte);
-  console.log(dst_ds); 
+  //create coordinatesystem object
+  const crs = new gdal.SpatialReference.fromEPSG(3006);
+  const epsg = 3006;
+  //set spatialreference
+  const wkt = crs.toWKT();
+  //set transformation 
+  const bbox = image.getBoundingBox();
+  const xmin = bbox[0];
+  const ymax = bbox[3];
+  // transformation array. 0 means north is up in relation to the axle
+  // trf = [xmin, pixelwidth, Xnorth_scalar, ymax, Ynorth_scalar, pixelheight]
+  const trf = [xmin, ModelPixelScale[0], 0, ymax, 0, -ModelPixelScale[1]];
 
-
-
+  //set projection and geotranform
+  dst_ds.geoTransform = trf;
+  dst_ds.srs = crs;
+  console.log(dst_ds);
+  //add data
+  
+  const band1 = dst_ds.bands.get(1);
+  //band1.colorInterpretation = "GCI_PaletteIndex";
+  band1.pixels.write(0, 0, 500, 500, raster);
+  
+  
+  
+  dst_ds.flush();
   // let writeStream = fs.createWriteStream('pine_copy3.tif');
 
   // // write some data with encoding
