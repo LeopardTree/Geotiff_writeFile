@@ -75,6 +75,9 @@ const main = async () => {
   }
   const arrtype = checkTypedArrayType(raster);
 
+  // https://www.youtube.com/watch?v=YoiDD_8C6Jc&ab_channel=OUTREACHIIRSDehradun
+  // from gdal python example
+
   let dataset = gdal.open('nmd.tif');
   
   console.log(dataset);
