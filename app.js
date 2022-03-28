@@ -3,11 +3,14 @@ import GeoTIFF, { writeArrayBuffer, fromFile, fromArrayBuffer } from 'geotiff';
 import gdal from 'gdal';
 const main = async () => {
 
-  const tif = await fromFile('nmd.tif');
+  const tif = await fromFile('pine.tif');
   //console.log(tif);
   const image = await tif.getImage();
+  console.log(image);
   const layer = await image.readRasters();
+  console.log(layer.length);
   const raster = layer[0];
+  console.log(raster);
 
   const values = raster;
   const imageHeight = await layer.height;
@@ -45,7 +48,32 @@ const main = async () => {
   const ResolutionUnit = await fileDir.ResolutionUnit;
   const SubfileType = 1;
   const SampleFormat = await fileDir.SampleFormat;
+  const bandCount = layer.length;
+  const GDAL_NODATA = await fileDir.GDAL_NODATA;
+  console.log(GDAL_NODATA);
 
+  // let nodataExists = 'GDAL_NODATA' in fileDir;
+  // if (nodataExists) {
+  //   const stringNodata = await fileDir.GDAL_NODATA;
+  //   if (stringNodata) {
+  //     const noDataSplit = await stringNodata.split('\\');
+  //     noDataValue = noDataSplit[0];
+  //   }
+  // }
+  // else noDataValue = null;
+
+  // const noData = async (fileDir) => {
+  //   let exists = 'GDAL_NODATA' in fileDir
+  //   if (fileDir.hasOwnProperty('GDAL_NODATA')) {
+  //     const stringNodata = await fileDir.GDAL_NODATA;
+  //     if (stringNodata) {
+  //       const noDataSplit = await stringNodata.split('\\');
+  //       return noDataSplit[0];
+  //     }
+  //   }
+  //   return null;
+  // }
+  // const noDataValue = noData();
 
   const metadata = {
     height: imageHeight,
@@ -67,66 +95,67 @@ const main = async () => {
 
   }
   //https://stackoverflow.com/questions/58280379/how-to-find-the-type-of-a-typedarray
-  function checkTypedArrayType(someTypedArray) {
+  const checkTypedArrayType = async (someTypedArray) => {
     return someTypedArray && 
       someTypedArray.constructor && 
       someTypedArray.constructor.name || 
       null;
   }
-  const arrtype = checkTypedArrayType(raster);
+  const arrtype = await checkTypedArrayType(raster);
+  console.log(arrtype);
 
-  // https://www.youtube.com/watch?v=YoiDD_8C6Jc&ab_channel=OUTREACHIIRSDehradun
-  // from gdal python example
 
-  let dataset = gdal.open('nmd.tif');
-  
-  console.log(dataset);
+  // const gdalOpen = (filepath) => {
+  //   let dataset = gdal.open('nmd.tif');
+
+  // }
+  // let dataset = gdal.open('nmd.tif');
+
   // const dst_ds = driver.create('nmd_copy.tif', imageWidth, imageHeight, numBands, gdal.GDT_Byte);
   // console.log(dst_ds); 
   // create geotiff driver
   const driver = gdal.drivers.get('GTiff');
-  //create destination dataset
-  let dst_ds = driver.create('nmd_copy_gdal.tif', 500, 500, 1, arrtype);
+  //create destination dataset. create(destination_name, x_size, y_size, band_count, data_type)
+  let dst_ds = driver.create('pine_copy.tif', imageWidth, imageHeight, bandCount, gdal.GDT_Float32);
   //console.log(dst_ds);
 
-  //create coordinatesystem object
-  const crs = new gdal.SpatialReference.fromEPSG(3006);
-  const epsg = 3006;
-  //set spatialreference
-  const wkt = crs.toWKT();
+  //add data
+  
+  const band1 = dst_ds.bands.get(1);
+  if(GDAL_NODATA){
+    band1.noDataValue = GDAL_NODATA;
+  }
+  
+
+  band1.pixels.write(0, 0, imageWidth, imageHeight, raster);
+
+  console.log(ProjectedCSTypeGeoKey);
+  //create coordinatesystem object with spatial reference
+  const epsg = ProjectedCSTypeGeoKey;
+  if(epsg === null){
+    // if no projection geokey. set to sweref TM
+    epsg = 3006;
+  }
+  const crs = new gdal.SpatialReference.fromEPSG(epsg);
+  
+  // const wkt = await crs.toWKT();
   //set transformation 
   const bbox = image.getBoundingBox();
   const xmin = bbox[0];
   const ymax = bbox[3];
   // transformation array. 0 means north is up in relation to the axle
-  // trf = [xmin, pixelwidth, Xnorth_scalar, ymax, Ynorth_scalar, pixelheight]
+  // trf = [xmin, pixelwidth_vector, Xnorth_scalar, ymax, Ynorth_scalar, pixelheight_vector]
   const trf = [xmin, ModelPixelScale[0], 0, ymax, 0, -ModelPixelScale[1]];
 
-  //set projection and geotranform
-  dst_ds.geoTransform = trf;
+  //set spatial reference and geotransform
   dst_ds.srs = crs;
-  console.log(dst_ds);
-  //add data
+  dst_ds.geoTransform = trf;
   
-  const band1 = dst_ds.bands.get(1);
-  //band1.colorInterpretation = "GCI_PaletteIndex";
-  band1.pixels.write(0, 0, 500, 500, raster);
-  
-  
-  
+  // write to file
   dst_ds.flush();
-  // let writeStream = fs.createWriteStream('pine_copy3.tif');
 
-  // // write some data with encoding
-  // writeStream.write(buffer, 'utf8');
-
-  // // the finish event is emitted when all data has been flushed from the stream
-  // writeStream.on('finish', () => {
-  //   console.log('wrote all data to file');
-  // });
-
-  // // close the stream
-  // writeStream.end();
+  //close dataset
+  dst_ds.close();
 
 }
 const resulthandler = err => {
@@ -135,7 +164,5 @@ const resulthandler = err => {
   console.log("Done");
 }
 main().then(resulthandler).catch(resulthandler);
-
-
 
 // info about tif from https://www.itu.int/itudoc/itu-t/com16/tiff-fx/docs/tiff6.pdf
