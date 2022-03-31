@@ -1,6 +1,23 @@
 import fs from 'fs';
 import GeoTIFF, { writeArrayBuffer, fromFile, fromArrayBuffer } from 'geotiff';
 import gdal from 'gdal';
+const retrieveGDAL_NODATA = async (GDAL_NODATA) => {
+  if (GDAL_NODATA) {
+      try {
+          return parseInt(GDAL_NODATA);
+      }
+      catch (err) {
+          console.log(err);
+      }
+      try {
+          return number(GDAL_NODATA);
+      }
+      catch (err) {
+          console.log(err);
+      }
+  }
+  return GDAL_NODATA;
+}
 const main = async () => {
 
   const tif = await fromFile('pine.tif');
@@ -49,51 +66,12 @@ const main = async () => {
   const SubfileType = 1;
   const SampleFormat = await fileDir.SampleFormat;
   const bandCount = layer.length;
-  const GDAL_NODATA = await fileDir.GDAL_NODATA;
+  const areaOrPoint = await image.geoKeys.GTRasterTypeGeoKey;
+  let GDAL_NODATA = await fileDir.GDAL_NODATA;
   console.log(GDAL_NODATA);
 
-  // let nodataExists = 'GDAL_NODATA' in fileDir;
-  // if (nodataExists) {
-  //   const stringNodata = await fileDir.GDAL_NODATA;
-  //   if (stringNodata) {
-  //     const noDataSplit = await stringNodata.split('\\');
-  //     noDataValue = noDataSplit[0];
-  //   }
-  // }
-  // else noDataValue = null;
+  GDAL_NODATA = await retrieveGDAL_NODATA(GDAL_NODATA);
 
-  // const noData = async (fileDir) => {
-  //   let exists = 'GDAL_NODATA' in fileDir
-  //   if (fileDir.hasOwnProperty('GDAL_NODATA')) {
-  //     const stringNodata = await fileDir.GDAL_NODATA;
-  //     if (stringNodata) {
-  //       const noDataSplit = await stringNodata.split('\\');
-  //       return noDataSplit[0];
-  //     }
-  //   }
-  //   return null;
-  // }
-  // const noDataValue = noData();
-
-  const metadata = {
-    height: imageHeight,
-    width: imageWidth,
-    StripOffsets: stripOffsets,
-    StripByteCounts: stripByteCounts,
-    XResolution: XResolution,
-    YResolution: YResolution,
-    ModelPixelScale: ModelPixelScale,
-    ModelTiepoint: ModelTiepoint,
-    GeoKeyDirectory: GeoKeyDirectory,
-    GeoAsciiParams: GeoAsciiParams,
-    PhotometricInterpretation: 3,
-    Compression: Compression,
-    SamplesPerPixel: SamplesPerPixel,
-    ProjectedCSTypeGeoKey: ProjectedCSTypeGeoKey,
-    DateTime: '',
-    Orientation: Orientation,
-
-  }
   //https://stackoverflow.com/questions/58280379/how-to-find-the-type-of-a-typedarray
   const checkTypedArrayType = async (someTypedArray) => {
     return someTypedArray && 
@@ -105,15 +83,6 @@ const main = async () => {
   console.log(arrtype);
 
 
-  // const gdalOpen = (filepath) => {
-  //   let dataset = gdal.open('nmd.tif');
-
-  // }
-  // let dataset = gdal.open('nmd.tif');
-
-  // const dst_ds = driver.create('nmd_copy.tif', imageWidth, imageHeight, numBands, gdal.GDT_Byte);
-  // console.log(dst_ds); 
-  // create geotiff driver
   const driver = gdal.drivers.get('GTiff');
   //create destination dataset. create(destination_name, x_size, y_size, band_count, data_type)
   let dst_ds = driver.create('pine_copy.tif', imageWidth, imageHeight, bandCount, gdal.GDT_Float32);
@@ -122,11 +91,10 @@ const main = async () => {
   //add data
   
   const band1 = dst_ds.bands.get(1);
-  if(GDAL_NODATA){
+  if(GDAL_NODATA != null){
     band1.noDataValue = GDAL_NODATA;
   }
   
-
   band1.pixels.write(0, 0, imageWidth, imageHeight, raster);
 
   console.log(ProjectedCSTypeGeoKey);
@@ -150,12 +118,40 @@ const main = async () => {
   //set spatial reference and geotransform
   dst_ds.srs = crs;
   dst_ds.geoTransform = trf;
-  
+  const newPixX = 10;
+  const newPixY = 10;
+  const totalWidth = ModelPixelScale[0] * imageWidth;
+  const totalHeight = ModelPixelScale[1] * imageHeight;
+  const newImageWidth = totalWidth / newPixX;
+  const newImageHeight = totalHeight / newPixY;
+  const prj_ds = driver.create('pine_warp9.tif', newImageWidth, newImageHeight, bandCount, gdal.GDT_Float32);
+  prj_ds.srs = crs;
+  let newXmin = xmin;
+  let newYmax = ymax;
+  if(areaOrPoint === 2){
+    newXmin = xmin - ModelPixelScale[0]/2;
+    newYmax = ymax + ModelPixelScale[1]/2;  
+  }
+  prj_ds.geoTransform = [newXmin, newPixX, 0, newYmax, 0, -newPixY];
+  const band1prj = prj_ds.bands.get(1);
+  if(GDAL_NODATA != null){
+    band1prj.noDataValue = GDAL_NODATA;
+  }
+ 
+  // warp
+  gdal.reprojectImage({
+    src: dst_ds,
+    dst: prj_ds,
+    s_srs: dst_ds.srs,
+    t_srs: prj_ds.srs,
+    resampling: gdal.GRA_Bilinear
+  });
   // write to file
-  dst_ds.flush();
+  prj_ds.flush();
 
   //close dataset
   dst_ds.close();
+  prj_ds.close();
 
 }
 const resulthandler = err => {
@@ -164,5 +160,7 @@ const resulthandler = err => {
   console.log("Done");
 }
 main().then(resulthandler).catch(resulthandler);
+
+
 
 // info about tif from https://www.itu.int/itudoc/itu-t/com16/tiff-fx/docs/tiff6.pdf
