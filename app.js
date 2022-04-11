@@ -1,6 +1,8 @@
 import fs from 'fs';
 import GeoTIFF, { writeArrayBuffer, fromFile, fromArrayBuffer } from 'geotiff';
+
 import gdal from 'gdal';
+
 const retrieveGDAL_NODATA = async (GDAL_NODATA) => {
   if (GDAL_NODATA) {
       try {
@@ -124,7 +126,7 @@ const main = async () => {
   const totalHeight = ModelPixelScale[1] * imageHeight;
   const newImageWidth = totalWidth / newPixX;
   const newImageHeight = totalHeight / newPixY;
-  const prj_ds = driver.create('pine_warp9.tif', newImageWidth, newImageHeight, bandCount, gdal.GDT_Float32);
+  const prj_ds = driver.create('pine_prj2.tif', newImageWidth, newImageHeight, bandCount, gdal.GDT_Float32);
   prj_ds.srs = crs;
   let newXmin = xmin;
   let newYmax = ymax;
@@ -132,7 +134,7 @@ const main = async () => {
     newXmin = xmin - ModelPixelScale[0]/2;
     newYmax = ymax + ModelPixelScale[1]/2;  
   }
-  prj_ds.geoTransform = [newXmin, newPixX, 0, newYmax, 0, -newPixY];
+  prj_ds.geoTransform = [550020, newPixX, 0, 6454980, 0, -newPixY];
   const band1prj = prj_ds.bands.get(1);
   if(GDAL_NODATA != null){
     band1prj.noDataValue = GDAL_NODATA;
