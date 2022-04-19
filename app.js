@@ -112,6 +112,8 @@ const main = async () => {
   //set transformation 
   const bbox = image.getBoundingBox();
   const xmin = bbox[0];
+  const xmax = bbox[1];
+  const ymin = bbox[2];
   const ymax = bbox[3];
   // transformation array. 0 means north is up in relation to the axle
   // trf = [xmin, pixelwidth_vector, Xnorth_scalar, ymax, Ynorth_scalar, pixelheight_vector]
@@ -120,33 +122,43 @@ const main = async () => {
   //set spatial reference and geotransform
   dst_ds.srs = crs;
   dst_ds.geoTransform = trf;
-  const newPixX = 10;
-  const newPixY = 10;
-  const totalWidth = ModelPixelScale[0] * imageWidth;
-  const totalHeight = ModelPixelScale[1] * imageHeight;
-  const newImageWidth = totalWidth / newPixX;
-  const newImageHeight = totalHeight / newPixY;
-  const prj_ds = driver.create('pine_prj2.tif', newImageWidth, newImageHeight, bandCount, gdal.GDT_Float32);
-  prj_ds.srs = crs;
   let newXmin = xmin;
+  let newXmax = xmax;
+  let newYmin = ymin;
   let newYmax = ymax;
   if(areaOrPoint === 2){
     newXmin = xmin - ModelPixelScale[0]/2;
+    newXmax = xmax - ModelPixelScale[0]/2;
+    newYmin = ymin + ModelPixelScale[1]/2;
     newYmax = ymax + ModelPixelScale[1]/2;  
   }
-  prj_ds.geoTransform = [550020, newPixX, 0, 6454980, 0, -newPixY];
+  const newPixX = 7;
+  const newPixY = 7;
+  const totalWidth = ModelPixelScale[0] * imageWidth;
+  const totalHeight = ModelPixelScale[1] * imageHeight;
+  let newImageWidth = totalWidth / newPixX;
+  let newImageHeight = totalHeight / newPixY;
+
+  
+  // new origin will move in about 0.4 - 0.99 pixel length if pixelsize are decreased. 
+  // therefor if new pixel size < old pixel size ... 
+  const prj_ds = driver.create('pine_prj_7m_cutline2_0m.tif', newImageWidth , newImageHeight, bandCount, gdal.GDT_Float32);
+  prj_ds.srs = crs;
+  
+  prj_ds.geoTransform = [newXmin, newPixX, 0, newYmax, 0, -newPixY];
   const band1prj = prj_ds.bands.get(1);
   if(GDAL_NODATA != null){
     band1prj.noDataValue = GDAL_NODATA;
   }
- 
+
   // warp
   gdal.reprojectImage({
     src: dst_ds,
     dst: prj_ds,
     s_srs: dst_ds.srs,
     t_srs: prj_ds.srs,
-    resampling: gdal.GRA_Bilinear
+    resampling: gdal.GRA_Bilinear,
+    cutline, cutline
   });
   // write to file
   prj_ds.flush();
