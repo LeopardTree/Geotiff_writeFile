@@ -87,7 +87,7 @@ const main = async () => {
 
   const driver = gdal.drivers.get('GTiff');
   //create destination dataset. create(destination_name, x_size, y_size, band_count, data_type)
-  let dst_ds = driver.create('pine_copy.tif', imageWidth, imageHeight, bandCount, gdal.GDT_Float32);
+  let dst_ds = driver.create('pine_spruce.tif', imageWidth, imageHeight, 2, gdal.GDT_Float32);
   //console.log(dst_ds);
 
   //add data
@@ -99,8 +99,19 @@ const main = async () => {
   
   band1.pixels.write(0, 0, imageWidth, imageHeight, raster);
 
+  const layer2 = gdal.open('spruce.tif', 'r');
+  const layer2_band = layer2.bands.get(1);
+  const raster2 = layer2_band.pixels.read(0, 0, imageWidth, imageHeight);
+  console.log(raster2);
+  const band2 = dst_ds.bands.get(2);
+  if(GDAL_NODATA != null){
+    band2.noDataValue = GDAL_NODATA;
+  }
+  
+  band2.pixels.write(0, 0, imageWidth, imageHeight, raster2);
+
   console.log(ProjectedCSTypeGeoKey);
-  //create coordinatesystem object with spatial reference
+  // create coordinatesystem object with spatial reference
   const epsg = ProjectedCSTypeGeoKey;
   if(epsg === null){
     // if no projection geokey. set to sweref TM
@@ -109,46 +120,69 @@ const main = async () => {
   const crs = new gdal.SpatialReference.fromEPSG(epsg);
   
   // const wkt = await crs.toWKT();
-  //set transformation 
+  // set transformation 
   const bbox = image.getBoundingBox();
-  const xmin = bbox[0];
-  const xmax = bbox[1];
-  const ymin = bbox[2];
-  const ymax = bbox[3];
+  let xmin = bbox[0];
+  let xmax = bbox[1];
+  let ymin = bbox[2];
+  let ymax = bbox[3];
   // transformation array. 0 means north is up in relation to the axle
   // trf = [xmin, pixelwidth_vector, Xnorth_scalar, ymax, Ynorth_scalar, pixelheight_vector]
-  const trf = [xmin, ModelPixelScale[0], 0, ymax, 0, -ModelPixelScale[1]];
-
-  //set spatial reference and geotransform
+  if(areaOrPoint === 2){
+    xmin -= ModelPixelScale[0]/2;
+    xmax -= ModelPixelScale[0]/2;
+    ymin += ModelPixelScale[1]/2;
+    ymax += ModelPixelScale[1]/2;  
+  }
+  // source geotransform
+  const gt = [xmin, ModelPixelScale[0], 0, ymax, 0, -ModelPixelScale[1]];
+  console.log(gt);
+  // set spatial reference and geotransform of source
   dst_ds.srs = crs;
-  dst_ds.geoTransform = trf;
+  dst_ds.geoTransform = gt;
   let newXmin = xmin;
   let newXmax = xmax;
   let newYmin = ymin;
   let newYmax = ymax;
-  if(areaOrPoint === 2){
-    newXmin = xmin - ModelPixelScale[0]/2;
-    newXmax = xmax - ModelPixelScale[0]/2;
-    newYmin = ymin + ModelPixelScale[1]/2;
-    newYmax = ymax + ModelPixelScale[1]/2;  
-  }
-  const newPixX = 7;
-  const newPixY = 7;
-  const totalWidth = ModelPixelScale[0] * imageWidth;
-  const totalHeight = ModelPixelScale[1] * imageHeight;
-  let newImageWidth = totalWidth / newPixX;
-  let newImageHeight = totalHeight / newPixY;
+  
+  // https://github.com/yocontra/node-gdal-next/blob/master/test/api_warp.test.js#L135
 
+  // target resolution
+  const tr = {x: 10, y: 10};
+  //set target reference system
+  const t_srs = crs;
+  const tx = new gdal.CoordinateTransformation(dst_ds.srs, t_srs);
+  // compute output geotransform / dimensions
+  const ul = tx.transformPoint(gt[0], gt[3]);
+  const ur = tx.transformPoint(gt[0] + gt[1] * imageWidth, gt[3]);
+  const lr = tx.transformPoint(gt[0] + gt[1] * imageWidth, gt[3] + gt[5] * imageHeight);
+  const ll = tx.transformPoint(gt[0], gt[3] + gt[5] * imageHeight);
+
+  let extent = new gdal.Polygon();
+  const ring = new gdal.LinearRing();
+  ring.points.add([ul, ur, lr, ll, ul]);
+  extent.rings.add(ring);
+  extent = extent.getEnvelope();
+
+  const newImageWidth = Math.ceil(Math.max(extent.maxX - extent.minX) / tr.x);
+  const newImageHeight = Math.ceil(Math.max(extent.maxY - extent.minY) / tr.y);
   
-  // new origin will move in about 0.4 - 0.99 pixel length if pixelsize are decreased. 
-  // therefor if new pixel size < old pixel size ... 
-  const prj_ds = driver.create('pine_prj_7m_cutline2_0m.tif', newImageWidth , newImageHeight, bandCount, gdal.GDT_Float32);
-  prj_ds.srs = crs;
+
+  // const prj_ds = driver.create('pine_prj_to_nmd.tif', newImageWidth , newImageHeight, bandCount, gdal.GDT_Float32);
+  const prj_ds = driver.create('pine_spruce_to_10x10.tif', newImageWidth , newImageHeight, 2, gdal.GDT_Float32);
+  prj_ds.srs = t_srs;
+  prj_ds.geoTransform = [ extent.minX, tr.x, gt[2], extent.maxY, gt[4], -tr.y ];
+  console.log(prj_ds.geoTransform);
+
+  //const target_transform = gdal.open('nmd.tif', 'r');
   
-  prj_ds.geoTransform = [newXmin, newPixX, 0, newYmax, 0, -newPixY];
+  //prj_ds.geoTransform = target_transform.geoTransform;
+
   const band1prj = prj_ds.bands.get(1);
+  const band2prj = prj_ds.bands.get(2);
   if(GDAL_NODATA != null){
     band1prj.noDataValue = GDAL_NODATA;
+    band2prj.noDataValue = GDAL_NODATA;
   }
 
   // warp
@@ -157,11 +191,11 @@ const main = async () => {
     dst: prj_ds,
     s_srs: dst_ds.srs,
     t_srs: prj_ds.srs,
-    resampling: gdal.GRA_Bilinear,
-    cutline, cutline
+    resampling: gdal.GRA_NearestNeighbor
   });
   // write to file
   prj_ds.flush();
+  //dst_ds.flush();
 
   //close dataset
   dst_ds.close();
